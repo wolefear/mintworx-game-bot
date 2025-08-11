@@ -100,12 +100,16 @@ module.exports = {
   async endRaffleAutomatically(channel, raffleId, raffle) {
     try {
       const winners = this.selectWinners(raffle.entries, raffle.spots);
-      const embed = new EmbedBuilder()
-        .setTitle(`${raffle.title} - Ended`)
+      
+      // Create a NEW message for the raffle end announcement
+      const endEmbed = new EmbedBuilder()
+        .setTitle(`${raffle.title} - Results`)
         .setDescription(
           `**Winners**: ${winners.length > 0 ? winners.map(id => `<@${id}>`).join(', ') : 'No participants entered the raffle'}\n\n` +
           `🎁 **PRIZES** 🎁\n${this.formatNumber(raffle.spots)} spots for **${raffle.prize}**\n\n` +
           `**Blockchain**\n${raffle.blockchain}\n\n` +
+          `**Total Entries**: ${this.formatNumber(raffle.entries.size)}\n` +
+          `**Total Bids**: ${this.formatNumber(raffle.bids.size)}\n\n` +
           `*This raffle has ended.*`
         )
         .setColor(0xff0000)
@@ -113,15 +117,26 @@ module.exports = {
         .setThumbnail('https://i.imgur.com/oqSl593.png');
 
       if (raffle.bannerUrl) {
-        embed.setImage(this.convertImgurUrl(raffle.bannerUrl));
+        endEmbed.setImage(this.convertImgurUrl(raffle.bannerUrl));
       }
 
+      // Send the end announcement as a NEW message
+      await channel.send({ embeds: [endEmbed] });
+
+      // Disable buttons on the original raffle message (but don't change the embed)
       try {
-        const message = await channel.messages.fetch(raffle.messageId);
-        await message.edit({ embeds: [embed], components: [] });
+        const originalMessage = await channel.messages.fetch(raffle.messageId);
+        const disabledButtons = [
+          new ButtonBuilder().setCustomId(`raffle_enter_${raffleId}`).setLabel('Raffle Ended').setStyle(ButtonStyle.Secondary).setDisabled(true)
+        ];
+        if (raffle.bidTokens > 0) {
+          disabledButtons.push(new ButtonBuilder().setCustomId(`raffle_bid_${raffleId}`).setLabel('Bidding Closed').setStyle(ButtonStyle.Secondary).setDisabled(true));
+        }
+        const disabledRow = new ActionRowBuilder().addComponents(disabledButtons);
+        
+        await originalMessage.edit({ components: [disabledRow] });
       } catch (error) {
-        console.error(`Error fetching/editing raffle message ${raffleId}:`, error);
-        await channel.send({ content: `Failed to update raffle message ${raffleId}, but the raffle has ended. Winners: ${winners.length > 0 ? winners.map(id => `<@${id}>`).join(', ') : 'None'}` });
+        console.error(`Error disabling buttons on raffle message ${raffleId}:`, error);
       }
 
       this.activeRaffles.delete(raffleId);
@@ -466,30 +481,44 @@ module.exports = {
           }
         }
 
-        const embed = new EmbedBuilder()
-          .setTitle(`${raffle.title} - Ended`)
+        // Create a NEW message for the manual raffle end announcement
+        const endEmbed = new EmbedBuilder()
+          .setTitle(`${raffle.title} - Results`)
           .setDescription(
             `**Winners**: ${winners.length > 0 ? winners.map(w => `<@${w.id}>`).join(', ') : 'None'}\n\n` +
             `🎁 **PRIZES** 🎁\n${this.formatNumber(raffle.spots)} spots for **${raffle.prize}**\n\n` +
             `**Blockchain**\n${raffle.blockchain}\n\n` +
-            `*This raffle has ended.*`
+            `**Total Entries**: ${this.formatNumber(raffle.entries.size)}\n` +
+            `**Total Bids**: ${this.formatNumber(raffle.bids.size)}\n\n` +
+            `*This raffle has been ended manually by an admin.*`
           )
           .setColor(0xff0000)
           .setFooter({ text: `Raffle ID: ${raffleId}` })
           .setThumbnail('https://i.imgur.com/oqSl593.png');
 
         if (raffle.bannerUrl) {
-          embed.setImage(this.convertImgurUrl(raffle.bannerUrl));
+          endEmbed.setImage(this.convertImgurUrl(raffle.bannerUrl));
         }
 
+        // Send the end announcement as a NEW message
+        await interaction.channel.send({ embeds: [endEmbed] });
+
+        // Disable buttons on the original raffle message (but don't change the embed)
         try {
-          const message = await interaction.channel.messages.fetch(raffle.messageId);
-          await message.edit({ embeds: [embed], components: [] });
-          await interaction.editReply({ content: 'Raffle ended successfully!' });
+          const originalMessage = await interaction.channel.messages.fetch(raffle.messageId);
+          const disabledButtons = [
+            new ButtonBuilder().setCustomId(`raffle_enter_${raffleId}`).setLabel('Raffle Ended').setStyle(ButtonStyle.Secondary).setDisabled(true)
+          ];
+          if (raffle.bidTokens > 0) {
+            disabledButtons.push(new ButtonBuilder().setCustomId(`raffle_bid_${raffleId}`).setLabel('Bidding Closed').setStyle(ButtonStyle.Secondary).setDisabled(true));
+          }
+          const disabledRow = new ActionRowBuilder().addComponents(disabledButtons);
+          
+          await originalMessage.edit({ components: [disabledRow] });
+          await interaction.editReply({ content: 'Raffle ended successfully! Results posted above.' });
         } catch (error) {
-          console.error(`Error updating raffle end message ${raffleId}:`, error);
-          await interaction.editReply({ content: 'Failed to end raffle!' });
-          return;
+          console.error(`Error disabling buttons on raffle message ${raffleId}:`, error);
+          await interaction.editReply({ content: 'Raffle ended, but failed to disable buttons on original message.' });
         }
 
         this.activeRaffles.delete(raffleId);
