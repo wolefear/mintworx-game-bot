@@ -52,7 +52,8 @@ module.exports = {
         option.setName('banner_url')
           .setDescription('Banner image URL (optional)')
           .setRequired(false))
-      .setDMPermission(false),
+      .setDMPermission(false)
+      .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
     new SlashCommandBuilder()
       .setName('endraffle')
       .setDescription('End a raffle and announce winners (Admin only)')
@@ -65,13 +66,14 @@ module.exports = {
           .setDescription('Comma-separated list of winner IDs')
           .setRequired(true))
       .setDMPermission(false)
+      .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
   ],
   activeRaffles: new Map(),
   formatNumber(number) {
     return `\`${number.toLocaleString()}\``;
   },
   formatTokens(amount) {
-    return `\`${amount.toLocaleString()}\` \`$MINT\``;
+    return leveling.formatTokens(amount);
   },
   parseRequirements(requirements, client) {
     return requirements;
@@ -101,7 +103,6 @@ module.exports = {
     try {
       const winners = this.selectWinners(raffle.entries, raffle.spots);
       
-      // Create a NEW message for the raffle end announcement
       const endEmbed = new EmbedBuilder()
         .setTitle(`${raffle.title} - Results`)
         .setDescription(
@@ -120,23 +121,27 @@ module.exports = {
         endEmbed.setImage(this.convertImgurUrl(raffle.bannerUrl));
       }
 
-      // Send the end announcement as a NEW message
       await channel.send({ embeds: [endEmbed] });
 
-      // Disable buttons on the original raffle message (but don't change the embed)
       try {
         const originalMessage = await channel.messages.fetch(raffle.messageId);
         const disabledButtons = [
           new ButtonBuilder().setCustomId(`raffle_enter_${raffleId}`).setLabel('Raffle Ended').setStyle(ButtonStyle.Secondary).setDisabled(true)
         ];
         if (raffle.bidTokens > 0) {
-          disabledButtons.push(new ButtonBuilder().setCustomId(`raffle_bid_${raffleId}`).setLabel('Bidding Closed').setStyle(ButtonStyle.Secondary).setDisabled(true));
+          disabledButtons.push(
+            new ButtonBuilder().setCustomId(`raffle_bid_${raffleId}`).setLabel('Bidding Closed').setStyle(ButtonStyle.Secondary).setDisabled(true)
+          );
         }
         const disabledRow = new ActionRowBuilder().addComponents(disabledButtons);
         
         await originalMessage.edit({ components: [disabledRow] });
       } catch (error) {
         console.error(`Error disabling buttons on raffle message ${raffleId}:`, error);
+      }
+
+      for (const userId of winners) {
+        await leveling.addXP(channel.client, channel.client.users.cache.get(userId), 25, 'raffle_win');
       }
 
       this.activeRaffles.delete(raffleId);
@@ -162,13 +167,19 @@ module.exports = {
       const raffle = this.activeRaffles.get(raffleId);
       if (!raffle) {
         await interaction.editReply({ content: 'This raffle has ended!' });
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply();
+          } catch (error) {
+            console.log('Could not delete ephemeral reply (likely already expired)');
+          }
+        }, 20000);
         return;
       }
 
       if (action === 'enter') {
         if (raffle.entries.has(interaction.user.id)) {
           await interaction.editReply({ content: 'You already entered!' });
-          
           setTimeout(async () => {
             try {
               await interaction.deleteReply();
@@ -181,7 +192,6 @@ module.exports = {
 
         if (raffle.entryTokens <= 0) {
           await interaction.editReply({ content: 'Invalid raffle configuration: Entry tokens must be greater than 0.' });
-          
           setTimeout(async () => {
             try {
               await interaction.deleteReply();
@@ -195,7 +205,6 @@ module.exports = {
         await leveling.openAccount(interaction.user);
         if (!(await leveling.removeTokens(interaction.user, raffle.entryTokens))) {
           await interaction.editReply({ content: `Need ${this.formatTokens(raffle.entryTokens)} to enter!` });
-          
           setTimeout(async () => {
             try {
               await interaction.deleteReply();
@@ -207,8 +216,8 @@ module.exports = {
         }
 
         raffle.entries.add(interaction.user.id);
+        await leveling.addXP(interaction.client, interaction.user, 10, 'raffle_entry');
         await interaction.editReply({ content: 'You have successfully entered the raffle!' });
-        
         setTimeout(async () => {
           try {
             await interaction.deleteReply();
@@ -222,7 +231,6 @@ module.exports = {
       } else if (action === 'bid') {
         if (raffle.bidTokens <= 0) {
           await interaction.editReply({ content: 'Bidding is disabled for this raffle!' });
-          
           setTimeout(async () => {
             try {
               await interaction.deleteReply();
@@ -235,7 +243,6 @@ module.exports = {
 
         if (raffle.bids.has(interaction.user.id)) {
           await interaction.editReply({ content: 'You already placed a bid!' });
-          
           setTimeout(async () => {
             try {
               await interaction.deleteReply();
@@ -250,7 +257,6 @@ module.exports = {
         const bidAmount = raffle.bidTokens;
         if (!(await leveling.removeTokens(interaction.user, bidAmount))) {
           await interaction.editReply({ content: `Need ${this.formatTokens(bidAmount)} to bid!` });
-          
           setTimeout(async () => {
             try {
               await interaction.deleteReply();
@@ -262,8 +268,8 @@ module.exports = {
         }
 
         raffle.bids.set(interaction.user.id, bidAmount);
+        await leveling.addXP(interaction.client, interaction.user, 15, 'raffle_bid');
         await interaction.editReply({ content: `You placed a bid of ${this.formatTokens(bidAmount)}!` });
-        
         setTimeout(async () => {
           try {
             await interaction.deleteReply();
@@ -278,11 +284,15 @@ module.exports = {
       console.error(`Error handling raffle button ${interaction.customId}:`, error);
       try {
         await interaction.editReply({ content: 'An error occurred while processing the button!' });
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply();
+          } catch (error) {
+            console.log('Could not delete ephemeral reply (likely already expired)');
+          }
+        }, 20000);
       } catch (followUpError) {
         console.error('Error sending button error reply:', followUpError);
-        if (followUpError.code === 10062) {
-          await interaction.followUp({ content: `An error occurred for ${interaction.user.username}. Please try again.`, ephemeral: true });
-        }
       }
     }
     console.log(`Button interaction ${interaction.id} processed in ${Date.now() - startTime}ms`);
@@ -330,11 +340,15 @@ module.exports = {
       console.error(`Error updating raffle message ${raffleId}:`, error);
       try {
         await interaction.followUp({ content: 'Failed to update raffle message!', ephemeral: true });
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply();
+          } catch (error) {
+            console.log('Could not delete ephemeral reply (likely already expired)');
+          }
+        }, 20000);
       } catch (followUpError) {
         console.error('Error sending raffle message update error:', followUpError);
-        if (followUpError.code === 10062) {
-          await interaction.followUp({ content: 'Failed to update raffle message. Please try again.', ephemeral: true });
-        }
       }
     }
   },
@@ -352,145 +366,175 @@ module.exports = {
       if (interaction.commandName === 'startraffle') {
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
           await interaction.editReply({ content: 'Only admins can start raffles!' });
+          setTimeout(async () => {
+            try {
+              await interaction.deleteReply();
+            } catch (error) {
+              console.log('Could not delete ephemeral reply (likely already expired)');
+            }
+          }, 20000);
           return;
         }
 
+        const title = interaction.options.getString('title');
+        const spots = interaction.options.getInteger('spots');
+        const prize = interaction.options.getString('prize');
+        const blockchain = interaction.options.getString('blockchain');
+        const requirements = interaction.options.getString('requirements');
         const entryTokens = interaction.options.getInteger('entry_tokens');
         const taskTokens = interaction.options.getInteger('task_tokens');
         const bidTokens = interaction.options.getInteger('bid_tokens');
-        if (entryTokens <= 0 || taskTokens <= 0) {
-          await interaction.editReply({ content: 'Entry tokens and task tokens must be greater than 0!' });
-          return;
-        }
+        const durationMinutes = interaction.options.getInteger('duration_minutes');
+        const bannerUrl = interaction.options.getString('banner_url') || null;
 
         const raffleId = Date.now().toString();
-        const durationMinutes = interaction.options.getInteger('duration_minutes');
-        const endTime = new Date(Date.now() + durationMinutes * 60 * 1000);
-        const bannerUrl = interaction.options.getString('banner_url');
+        const endTime = Date.now() + durationMinutes * 60 * 1000;
+
         const raffle = {
-          title: interaction.options.getString('title'),
-          spots: interaction.options.getInteger('spots'),
-          prize: interaction.options.getString('prize'),
-          blockchain: interaction.options.getString('blockchain'),
-          requirements: interaction.options.getString('requirements'),
+          title,
+          spots,
+          prize,
+          blockchain,
+          requirements,
           entryTokens,
           taskTokens,
           bidTokens,
           endTime,
-          bannerUrl: bannerUrl || null,
+          bannerUrl,
           entries: new Set(),
           bids: new Map(),
+          channelId: interaction.channelId,
           messageId: null,
-          timerId: null // Store timer ID for cleanup
+          timerId: null
         };
 
         this.activeRaffles.set(raffleId, raffle);
 
-        const biddingSection = raffle.bidTokens > 0 ?
+        const biddingSection = bidTokens > 0 ?
           `\n\n💰 **BIDDING** 💰\n\nWant to boost your chances? Place a bid with **\`$MINT\`!** *One bid only — make it count.*\n\n**Current Bids**: ${this.formatNumber(0)}` : '';
 
         const embed = new EmbedBuilder()
-          .setTitle(raffle.title)
+          .setTitle(title)
           .setDescription(
-            `🎁 **PRIZES** 🎁\n${this.formatNumber(raffle.spots)} spots for **${raffle.prize}**\n\n` +
-            `🎫 **RAFFLE** 🎫\n\nComplete the following tasks to earn up to ${this.formatTokens(raffle.taskTokens)} and get a chance to win the following raffle:\n` +
-            `**${raffle.prize}**: ${this.formatNumber(raffle.spots)} spots\n\n` +
+            `🎁 **PRIZES** 🎁\n${this.formatNumber(spots)} spots for **${prize}**\n\n` +
+            `🎫 **RAFFLE** 🎫\n\nComplete the following tasks to earn up to ${this.formatTokens(taskTokens)} and get a chance to win the following raffle:\n` +
+            `**${prize}**: ${this.formatNumber(spots)} spots\n\n` +
             `**Current Entries**: ${this.formatNumber(0)}` +
             biddingSection +
-            `\n\n**Requirements**\n${this.parseRequirements(raffle.requirements, interaction.client)}\n\n` +
+            `\n\n**Requirements**\n${this.parseRequirements(requirements, interaction.client)}\n\n` +
             `*Note: Requirements may be checked again at any time and winners will be rerolled if they didn't meet them.*\n\n` +
-            `**Ends**\n${raffle.endTime.toLocaleString()}\n\n` +
+            `**Ends**\n${new Date(endTime).toLocaleString()}\n\n` +
             `**Blockchain**\n${raffle.blockchain}`
           )
           .setColor(0xffd700)
           .setFooter({ text: `Raffle ID: ${raffleId}` })
           .setThumbnail('https://i.imgur.com/oqSl593.png');
 
-        if (raffle.bannerUrl) {
-          embed.setImage(this.convertImgurUrl(raffle.bannerUrl));
+        if (bannerUrl) {
+          embed.setImage(this.convertImgurUrl(bannerUrl));
         }
 
         const buttons = [
           new ButtonBuilder().setCustomId(`raffle_enter_${raffleId}`).setLabel('Join Raffle').setStyle(ButtonStyle.Primary)
         ];
-        if (raffle.bidTokens > 0) {
+        if (bidTokens > 0) {
           buttons.push(new ButtonBuilder().setCustomId(`raffle_bid_${raffleId}`).setLabel('Place Bid').setStyle(ButtonStyle.Secondary));
         }
         const row = new ActionRowBuilder().addComponents(buttons);
 
         try {
           const message = await interaction.channel.send({ embeds: [embed], components: [row] });
-          this.activeRaffles.get(raffleId).messageId = message.id;
-          await interaction.editReply({ content: `Raffle started! ID: ${raffleId}` });
-
-          // Schedule automatic raffle end and store timer ID
-          const timerId = setTimeout(() => this.endRaffleAutomatically(interaction.channel, raffleId, raffle), durationMinutes * 60 * 1000);
-          this.activeRaffles.get(raffleId).timerId = timerId;
+          raffle.messageId = message.id;
         } catch (error) {
           console.error(`Error sending raffle message ${raffleId}:`, error);
           this.activeRaffles.delete(raffleId);
           await interaction.editReply({ content: 'Failed to start raffle!' });
+          setTimeout(async () => {
+            try {
+              await interaction.deleteReply();
+            } catch (error) {
+              console.log('Could not delete ephemeral reply (likely already expired)');
+            }
+          }, 20000);
           return;
         }
+
+        raffle.timerId = setTimeout(() => this.endRaffleAutomatically(interaction.channel, raffleId, raffle), durationMinutes * 60 * 1000);
+
+        await interaction.editReply({ content: `Raffle "${title}" started successfully!` });
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply();
+          } catch (error) {
+            console.log('Could not delete ephemeral reply (likely already expired)');
+          }
+        }, 20000);
 
       } else if (interaction.commandName === 'endraffle') {
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
           await interaction.editReply({ content: 'Only admins can end raffles!' });
+          setTimeout(async () => {
+            try {
+              await interaction.deleteReply();
+            } catch (error) {
+              console.log('Could not delete ephemeral reply (likely already expired)');
+            }
+          }, 20000);
           return;
         }
 
         const raffleId = interaction.options.getString('raffle_id');
+        const winnersInput = interaction.options.getString('winners');
         const raffle = this.activeRaffles.get(raffleId);
+
         if (!raffle) {
-          await interaction.editReply({ content: 'Raffle not found!' });
+          await interaction.editReply({ content: `Raffle with ID ${raffleId} not found!` });
+          setTimeout(async () => {
+            try {
+              await interaction.deleteReply();
+            } catch (error) {
+              console.log('Could not delete ephemeral reply (likely already expired)');
+            }
+          }, 20000);
           return;
         }
 
-        // Clear the automatic timer to prevent duplicate execution
-        if (raffle.timerId) {
-          clearTimeout(raffle.timerId);
-        }
-
-        const winnerIds = interaction.options.getString('winners').split(',').map(id => id.trim());
-        
-        const winners = [];
-        for (const winnerId of winnerIds) {
-          let userId = winnerId;
-          
-          if (winnerId.startsWith('<@') && winnerId.endsWith('>')) {
-            userId = winnerId.slice(2, -1);
-            if (userId.startsWith('!')) {
-              userId = userId.slice(1);
-            }
-          }
-          
-          let user = interaction.client.users.cache.get(userId);
-          
-          if (!user) {
+        const winnerIds = winnersInput.split(',').map(id => id.trim());
+        if (winnerIds.length !== raffle.spots) {
+          await interaction.editReply({ content: `Please provide exactly ${raffle.spots} winner IDs!` });
+          setTimeout(async () => {
             try {
-              user = await interaction.client.users.fetch(userId);
-              console.log(`✅ Fetched user from API: ${user.username} (${user.id})`);
+              await interaction.deleteReply();
             } catch (error) {
-              console.error(`❌ Failed to fetch user ${userId}:`, error);
-              user = { id: userId, username: `User-${userId}`, tag: `User-${userId}#0000` };
+              console.log('Could not delete ephemeral reply (likely already expired)');
             }
-          }
-          
-          if (user) {
-            winners.push(user);
+          }, 20000);
+          return;
+        }
+
+        for (const winnerId of winnerIds) {
+          if (!raffle.entries.has(winnerId)) {
+            await interaction.editReply({ content: `User <@${winnerId}> did not enter the raffle!` });
+            setTimeout(async () => {
+              try {
+                await interaction.deleteReply();
+              } catch (error) {
+                console.log('Could not delete ephemeral reply (likely already expired)');
+              }
+            }, 20000);
+            return;
           }
         }
 
-        // Create a NEW message for the manual raffle end announcement
         const endEmbed = new EmbedBuilder()
           .setTitle(`${raffle.title} - Results`)
           .setDescription(
-            `**Winners**: ${winners.length > 0 ? winners.map(w => `<@${w.id}>`).join(', ') : 'None'}\n\n` +
+            `**Winners**: ${winnerIds.map(id => `<@${id}>`).join(', ')}\n\n` +
             `🎁 **PRIZES** 🎁\n${this.formatNumber(raffle.spots)} spots for **${raffle.prize}**\n\n` +
             `**Blockchain**\n${raffle.blockchain}\n\n` +
             `**Total Entries**: ${this.formatNumber(raffle.entries.size)}\n` +
             `**Total Bids**: ${this.formatNumber(raffle.bids.size)}\n\n` +
-            `*This raffle has been ended manually by an admin.*`
+            `*This raffle has ended.*`
           )
           .setColor(0xff0000)
           .setFooter({ text: `Raffle ID: ${raffleId}` })
@@ -500,38 +544,70 @@ module.exports = {
           endEmbed.setImage(this.convertImgurUrl(raffle.bannerUrl));
         }
 
-        // Send the end announcement as a NEW message
-        await interaction.channel.send({ embeds: [endEmbed] });
+        try {
+          await interaction.channel.send({ embeds: [endEmbed] });
+        } catch (error) {
+          console.error(`Error sending raffle end message ${raffleId}:`, error);
+          await interaction.editReply({ content: 'Failed to send raffle end message!' });
+          setTimeout(async () => {
+            try {
+              await interaction.deleteReply();
+            } catch (error) {
+              console.log('Could not delete ephemeral reply (likely already expired)');
+            }
+          }, 20000);
+          return;
+        }
 
-        // Disable buttons on the original raffle message (but don't change the embed)
         try {
           const originalMessage = await interaction.channel.messages.fetch(raffle.messageId);
           const disabledButtons = [
             new ButtonBuilder().setCustomId(`raffle_enter_${raffleId}`).setLabel('Raffle Ended').setStyle(ButtonStyle.Secondary).setDisabled(true)
           ];
           if (raffle.bidTokens > 0) {
-            disabledButtons.push(new ButtonBuilder().setCustomId(`raffle_bid_${raffleId}`).setLabel('Bidding Closed').setStyle(ButtonStyle.Secondary).setDisabled(true));
+            disabledButtons.push(
+              new ButtonBuilder().setCustomId(`raffle_bid_${raffleId}`).setLabel('Bidding Closed').setStyle(ButtonStyle.Secondary).setDisabled(true)
+            );
           }
           const disabledRow = new ActionRowBuilder().addComponents(disabledButtons);
           
           await originalMessage.edit({ components: [disabledRow] });
-          await interaction.editReply({ content: 'Raffle ended successfully! Results posted above.' });
         } catch (error) {
           console.error(`Error disabling buttons on raffle message ${raffleId}:`, error);
-          await interaction.editReply({ content: 'Raffle ended, but failed to disable buttons on original message.' });
+        }
+
+        for (const userId of winnerIds) {
+          await leveling.addXP(interaction.client, interaction.client.users.cache.get(userId), 25, 'raffle_win');
+        }
+
+        if (raffle.timerId) {
+          clearTimeout(raffle.timerId);
         }
 
         this.activeRaffles.delete(raffleId);
+
+        await interaction.editReply({ content: `Raffle ${raffleId} ended successfully!` });
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply();
+          } catch (error) {
+            console.log('Could not delete ephemeral reply (likely already expired)');
+          }
+        }, 20000);
       }
     } catch (error) {
       console.error(`Error executing raffle command ${interaction.commandName}:`, error);
       try {
         await interaction.editReply({ content: 'An error occurred while executing the command!' });
-      } catch (replyError) {
-        console.error('Error sending command error reply:', replyError);
-        if (replyError.code === 10062) {
-          await interaction.followUp({ content: `An error occurred for ${interaction.user.username}. Please try again.`, ephemeral: true });
-        }
+        setTimeout(async () => {
+          try {
+            await interaction.deleteReply();
+          } catch (error) {
+            console.log('Could not delete ephemeral reply (likely already expired)');
+          }
+        }, 20000);
+      } catch (followUpError) {
+        console.error('Error sending command error reply:', followUpError);
       }
     }
     console.log(`Command ${interaction.commandName} processed in ${Date.now() - startTime}ms`);

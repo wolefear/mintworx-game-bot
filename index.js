@@ -1,4 +1,5 @@
-const { Client, GatewayIntentBits, Collection, REST, Routes, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, REST, Routes, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { cleanup } = require('./cogs/cleanup');
 require('dotenv').config();
 
 const client = new Client({
@@ -12,8 +13,8 @@ const client = new Client({
 });
 
 client.commands = new Collection();
-client.cogs = new Collection(); // Store cog references for better access
-const cogs = ['leveling', 'games', 'raffle'];
+client.cogs = new Collection();
+const cogs = ['leveling', 'games', 'raffle', 'shop', 'giftmint'];
 
 // Collect commands for registration
 const commands = [];
@@ -25,7 +26,6 @@ cogs.forEach(cogName => {
       return;
     }
     
-    // Store the cog instance for easy access
     client.cogs.set(cogName, cog);
     
     cog.commands.forEach(command => {
@@ -43,13 +43,6 @@ cogs.forEach(cogName => {
       console.log(`✅ Loaded command: ${commandData.name} from ${cogName}`);
     });
     
-    // Handle events if the cog has them
-    if (cog.events) {
-      Object.entries(cog.events).forEach(([event, handler]) => {
-        client.on(event, (...args) => handler(...args));
-      });
-    }
-    
     console.log(`✅ Successfully loaded cog: ${cogName}`);
   } catch (error) {
     console.error(`❌ Failed to load cog ${cogName}:`, error);
@@ -58,8 +51,6 @@ cogs.forEach(cogName => {
 
 // Register commands with Discord API
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-
-// Replace with your server's ID
 const GUILD_ID = '1363087110554390598';
 
 client.once('ready', async () => {
@@ -111,10 +102,11 @@ client.on('interactionCreate', async interaction => {
       const [prefix] = interaction.customId.split('_');
       console.log(`🔘 Button pressed: ${interaction.customId} by ${interaction.user.username} (${interaction.user.id})`);
       
-      // Map button prefixes to cog names
       let cogName;
-      if (prefix === 'meltdown' || prefix === 'vault') {
+      if (prefix === 'meltdown') {
         cogName = 'games';
+      } else if (prefix === 'buy') {
+        cogName = 'shop';
       } else {
         cogName = prefix;
       }
@@ -132,12 +124,15 @@ client.on('interactionCreate', async interaction => {
             content: 'Button handler not found! Please contact an administrator.', 
             ephemeral: true 
           });
+          setTimeout(async () => {
+            try {
+              await interaction.deleteReply();
+            } catch (error) {
+              console.log('Could not delete ephemeral reply (likely already expired)');
+            }
+          }, 20000);
         }
       }
-    } else if (interaction.isStringSelectMenu()) {
-      // Handle select menu interactions if needed
-      console.log(`📋 Select menu interaction: ${interaction.customId} by ${interaction.user.username}`);
-      // Add select menu handling logic here if needed
     }
   } catch (error) {
     console.error('❌ Error handling interaction:', error);
@@ -163,7 +158,6 @@ client.on('interactionCreate', async interaction => {
           ephemeral: true 
         });
       } else {
-        // If already replied, try to edit the reply
         await interaction.editReply({ 
           content: errorMessage 
         });
@@ -188,26 +182,29 @@ client.on('warn', warning => {
 });
 
 // Graceful shutdown handling
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('🛑 Received SIGINT, shutting down gracefully...');
+  await cleanup(client);
   client.destroy();
   process.exit(0);
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('🛑 Received SIGTERM, shutting down gracefully...');
+  await cleanup(client);
   client.destroy();
   process.exit(0);
 });
 
 // Unhandled rejection/exception handling
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', async (reason, promise) => {
   console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', async (error) => {
   console.error('❌ Uncaught Exception:', error);
   console.log('🛑 Shutting down due to uncaught exception...');
+  await cleanup(client);
   client.destroy();
   process.exit(1);
 });

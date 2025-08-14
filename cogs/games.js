@@ -1,10 +1,8 @@
-const { SlashCommandBuilder, PermissionsBitField, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, ButtonBuilder, ButtonStyle, ActionRowBuilder, EmbedBuilder } = require('discord.js');
 const leveling = require('./leveling');
 
-// Game state storage
 const activeGames = new Map();
 
-// Command definitions
 const commands = [
   new SlashCommandBuilder()
     .setName('startmeltdown')
@@ -20,44 +18,20 @@ const commands = [
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 ];
 
-// Function to format tokens consistently with $MINT
-function formatTokens(amount) {
-  return `\`${amount.toLocaleString()}\` \`$MINT\``;
-}
-
-// Function to convert Imgur page URLs to direct image URLs
-function convertImgurUrl(url) {
-  if (!url) return null;
-  
-  // Check if it's an Imgur page URL (not direct image URL)
-  const imgurPageMatch = url.match(/^https?:\/\/imgur\.com\/([a-zA-Z0-9]+)$/);
-  if (imgurPageMatch) {
-    // Convert to direct image URL - default to .png, but you can specify the extension
-    return `https://i.imgur.com/${imgurPageMatch[1]}.png`;
-  }
-  
-  // If it's already a direct image URL or not an Imgur URL, return as-is
-  return url;
-}
-
-// Helper: Update Market Meltdown registration message
 async function updateRegistrationMessage(interaction, gameId) {
   const game = activeGames.get(gameId);
   if (!game) return;
   const share = game.players.size > 0 ? Math.floor(game.pot / game.players.size) : game.pot;
-  const embed = {
-    title: 'Market Meltdown',
-    description: `⛏️ REGISTRATION PHASE!\n` +
-                 `💎 You have 30 seconds to join the game!\n\n` +
-                 `🏆 Prize Pool: ${formatTokens(game.pot)}\n` +
-                 `💰 Pot will be shared equally among all participants!\n` +
-                 `⏱ 30-second cooldown between registrations!\n` +
-                 `**Players**: ${game.players.size}`,
-    color: 0x800080,
-    thumbnail: {
-      url: 'https://i.imgur.com/oqSl593.png'
-    }
-  };
+  const embed = new EmbedBuilder()
+    .setTitle('Market Meltdown')
+    .setDescription(`⛏️ REGISTRATION PHASE!\n` +
+                    `💎 You have 30 seconds to join the game!\n\n` +
+                    `🏆 Prize Pool: ${leveling.formatTokens(game.pot)}\n` +
+                    `💰 Pot will be shared equally among all participants!\n` +
+                    `⏱ 30-second cooldown between registrations!\n` +
+                    `**Players**: ${game.players.size}`)
+    .setColor(0x800080)
+    .setThumbnail('https://i.imgur.com/oqSl593.png');
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`meltdown_join_${gameId}`)
@@ -73,24 +47,20 @@ async function updateRegistrationMessage(interaction, gameId) {
   }
 }
 
-// Helper: Update Market Meltdown investment message
 async function updateInvestmentMessage(interaction, gameId) {
   const game = activeGames.get(gameId);
   if (!game) return;
   const share = Math.floor(game.pot / game.players.size);
   const investedCount = Array.from(game.players.values()).filter(p => p.investment > 0).length;
-  const embed = {
-    title: 'Market Meltdown',
-    description: `💰 INVESTMENT PHASE\n` +
-                 `📈 Market is now open!\n\n` +
-                 `💎 Click INVEST to invest your ${formatTokens(share)} from the pot.\n` +
-                 `⏰ You have 30 seconds!\n` +
-                 `**Players Invested**: ${investedCount}`,
-    color: 0x800080,
-    thumbnail: {
-      url: 'https://i.imgur.com/oqSl593.png'
-    }
-  };
+  const embed = new EmbedBuilder()
+    .setTitle('Market Meltdown')
+    .setDescription(`💰 INVESTMENT PHASE\n` +
+                    `📈 Market is now open!\n\n` +
+                    `💎 Click INVEST to invest your ${leveling.formatTokens(share)} from the pot.\n` +
+                    `⏰ You have 30 seconds!\n` +
+                    `**Players Invested**: ${investedCount}`)
+    .setColor(0x800080)
+    .setThumbnail('https://i.imgur.com/oqSl593.png');
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`meltdown_invest_${gameId}`)
@@ -106,32 +76,26 @@ async function updateInvestmentMessage(interaction, gameId) {
   }
 }
 
-// Helper: Update Market Meltdown voting message
 async function updateVotingMessage(interaction, gameId) {
   const game = activeGames.get(gameId);
   if (!game) return;
-  
   let withdrawDescription = '';
   if (game.round >= 2) {
     withdrawDescription = `\n**🏦 WITHDRAW**\nWithdraw the $MINT pot and divide it among remaining players\n`;
   }
-  
-  const embed = {
-    title: `Market Meltdown Round ${game.round}`,
-    description: `📊 MARKET MELTDOWN ROUND ${game.round}\n` +
-                 `The market is volatile! You have 60 seconds to make your trading decision\n\n` +
-                 `🚀 **Pump**\n` +
-                 `Believe in the market! Double the token pool if majority pumps\n\n` +
-                 `📉 **Dump**\n` +
-                 `Take 10% from the pool and exit (Market crashes if >50% dump)` +
-                 withdrawDescription +
-                 `\n💰 **Market Pool**\n` +
-                 `${formatTokens(game.pool)}`,
-    color: 0x800080,
-    thumbnail: {
-      url: 'https://i.imgur.com/oqSl593.png'
-    }
-  };
+  const embed = new EmbedBuilder()
+    .setTitle(`Market Meltdown Round ${game.round}`)
+    .setDescription(`📊 MARKET MELTDOWN ROUND ${game.round}\n` +
+                    `The market is volatile! You have 60 seconds to make your trading decision\n\n` +
+                    `🚀 **Pump**\n` +
+                    `Believe in the market! Double the token pool if majority pumps\n\n` +
+                    `📉 **Dump**\n` +
+                    `Take 10% from the pool and exit (Market crashes if >50% dump)` +
+                    withdrawDescription +
+                    `\n💰 **Market Pool**\n` +
+                    `${leveling.formatTokens(game.pool)}`)
+    .setColor(0x800080)
+    .setThumbnail('https://i.imgur.com/oqSl593.png');
   const buttons = [
     new ButtonBuilder()
       .setCustomId(`meltdown_pump_${gameId}`)
@@ -153,23 +117,19 @@ async function updateVotingMessage(interaction, gameId) {
   const row = new ActionRowBuilder().addComponents(buttons);
   try {
     const message = await interaction.channel.send({
-      embeds: [embed], 
+      embeds: [embed],
       components: [row]
     });
-    // Update the stored message ID to the new voting message
     activeGames.get(gameId).messageId = message.id;
   } catch (error) {
     console.error('Error updating voting message:', error);
   }
 }
 
-// Handle Market Meltdown buttons
 async function handleMeltdownButton(interaction, action, gameId) {
   const game = activeGames.get(gameId);
   if (!game) {
     await interaction.reply({ content: 'This game has ended!', ephemeral: true });
-    
-    // Auto-delete the ephemeral message after 20 seconds
     setTimeout(async () => {
       try {
         await interaction.deleteReply();
@@ -179,12 +139,10 @@ async function handleMeltdownButton(interaction, action, gameId) {
     }, 20000);
     return;
   }
-  
+
   if (action === 'join') {
     if (game.phase !== 'registration') {
       await interaction.reply({ content: 'Registration is closed!', ephemeral: true });
-      
-      // Auto-delete the ephemeral message after 20 seconds
       setTimeout(async () => {
         try {
           await interaction.deleteReply();
@@ -196,8 +154,6 @@ async function handleMeltdownButton(interaction, action, gameId) {
     }
     if (game.players.has(interaction.user.id)) {
       await interaction.reply({ content: 'You already joined!', ephemeral: true });
-      
-      // Auto-delete the ephemeral message after 20 seconds
       setTimeout(async () => {
         try {
           await interaction.deleteReply();
@@ -207,11 +163,9 @@ async function handleMeltdownButton(interaction, action, gameId) {
       }, 20000);
       return;
     }
-    // No $MINT requirement for joining
     game.players.set(interaction.user.id, { investment: 0, withdrawn: false });
+    await leveling.addXP(interaction.client, interaction.user, 10, 'meltdown_join');
     await interaction.reply({ content: 'Joined Market Meltdown!', ephemeral: true });
-    
-    // Auto-delete the ephemeral message after 20 seconds
     setTimeout(async () => {
       try {
         await interaction.deleteReply();
@@ -219,14 +173,11 @@ async function handleMeltdownButton(interaction, action, gameId) {
         console.log('Could not delete ephemeral reply (likely already expired)');
       }
     }, 20000);
-    
     await updateRegistrationMessage(interaction, gameId);
-    
+
   } else if (action === 'invest') {
     if (game.phase !== 'investment') {
       await interaction.reply({ content: 'Investment phase is over!', ephemeral: true });
-      
-      // Auto-delete the ephemeral message after 20 seconds
       setTimeout(async () => {
         try {
           await interaction.deleteReply();
@@ -238,8 +189,6 @@ async function handleMeltdownButton(interaction, action, gameId) {
     }
     if (!game.players.has(interaction.user.id)) {
       await interaction.reply({ content: "You didn't join the game!", ephemeral: true });
-      
-      // Auto-delete the ephemeral message after 20 seconds
       setTimeout(async () => {
         try {
           await interaction.deleteReply();
@@ -252,8 +201,6 @@ async function handleMeltdownButton(interaction, action, gameId) {
     const player = game.players.get(interaction.user.id);
     if (player.investment > 0) {
       await interaction.reply({ content: 'You already invested!', ephemeral: true });
-      
-      // Auto-delete the ephemeral message after 20 seconds
       setTimeout(async () => {
         try {
           await interaction.deleteReply();
@@ -265,9 +212,7 @@ async function handleMeltdownButton(interaction, action, gameId) {
     }
     const share = Math.floor(game.pot / game.players.size);
     if (!(await leveling.removeTokens(interaction.user, share))) {
-      await interaction.reply({ content: `Need ${formatTokens(share)} to invest!`, ephemeral: true });
-      
-      // Auto-delete the ephemeral message after 20 seconds
+      await interaction.reply({ content: `Need ${leveling.formatTokens(share)} to invest!`, ephemeral: true });
       setTimeout(async () => {
         try {
           await interaction.deleteReply();
@@ -279,9 +224,8 @@ async function handleMeltdownButton(interaction, action, gameId) {
     }
     game.players.get(interaction.user.id).investment = share;
     game.pool += share;
-    await interaction.reply({ content: `Invested ${formatTokens(share)}!`, ephemeral: true });
-    
-    // Auto-delete the ephemeral message after 20 seconds
+    await leveling.addXP(interaction.client, interaction.user, 20, 'meltdown_invest');
+    await interaction.reply({ content: `Invested ${leveling.formatTokens(share)}!`, ephemeral: true });
     setTimeout(async () => {
       try {
         await interaction.deleteReply();
@@ -289,14 +233,11 @@ async function handleMeltdownButton(interaction, action, gameId) {
         console.log('Could not delete ephemeral reply (likely already expired)');
       }
     }, 20000);
-    
     await updateInvestmentMessage(interaction, gameId);
-    
+
   } else if (['pump', 'dump', 'withdraw'].includes(action)) {
     if (game.phase !== 'voting' || (action === 'withdraw' && game.round < 2)) {
       await interaction.reply({ content: 'Invalid action for this phase!', ephemeral: true });
-      
-      // Auto-delete the ephemeral message after 20 seconds
       setTimeout(async () => {
         try {
           await interaction.deleteReply();
@@ -308,8 +249,6 @@ async function handleMeltdownButton(interaction, action, gameId) {
     }
     if (!game.players.has(interaction.user.id)) {
       await interaction.reply({ content: "You didn't join the game!", ephemeral: true });
-      
-      // Auto-delete the ephemeral message after 20 seconds
       setTimeout(async () => {
         try {
           await interaction.deleteReply();
@@ -322,8 +261,6 @@ async function handleMeltdownButton(interaction, action, gameId) {
     const player = game.players.get(interaction.user.id);
     if (player.withdrawn || player.investment === 0) {
       await interaction.reply({ content: "You can't vote!", ephemeral: true });
-      
-      // Auto-delete the ephemeral message after 20 seconds
       setTimeout(async () => {
         try {
           await interaction.deleteReply();
@@ -335,8 +272,6 @@ async function handleMeltdownButton(interaction, action, gameId) {
     }
     if (game.votes.has(interaction.user.id)) {
       await interaction.reply({ content: 'You already voted this round!', ephemeral: true });
-      
-      // Auto-delete the ephemeral message after 20 seconds
       setTimeout(async () => {
         try {
           await interaction.deleteReply();
@@ -347,9 +282,8 @@ async function handleMeltdownButton(interaction, action, gameId) {
       return;
     }
     game.votes.set(interaction.user.id, action);
+    await leveling.addXP(interaction.client, interaction.user, 15, `meltdown_${action}`);
     await interaction.reply({ content: `Voted to ${action.toUpperCase()}!`, ephemeral: true });
-    
-    // Auto-delete the ephemeral message after 20 seconds
     setTimeout(async () => {
       try {
         await interaction.deleteReply();
@@ -357,10 +291,21 @@ async function handleMeltdownButton(interaction, action, gameId) {
         console.log('Could not delete ephemeral reply (likely already expired)');
       }
     }, 20000);
+    if (action === 'dump') {
+      const dumpReward = Math.floor(game.pool * 0.1);
+      await leveling.addTokens(interaction.user, dumpReward);
+      await leveling.addXP(interaction.client, interaction.user, 20, 'meltdown_dump_reward');
+      game.players.get(interaction.user.id).withdrawn = true;
+      game.pool -= dumpReward;
+    } else if (action === 'withdraw') {
+      const winnings = Math.floor(player.investment * game.multiplier);
+      await leveling.addTokens(interaction.user, winnings);
+      await leveling.addXP(interaction.client, interaction.user, 25, 'meltdown_withdraw');
+      game.players.get(interaction.user.id).withdrawn = true;
+    }
   }
 }
 
-// Execute commands
 async function execute(interaction) {
   try {
     if (interaction.commandName === 'startmeltdown') {
@@ -392,17 +337,13 @@ async function execute(interaction) {
         channelId: interaction.channelId,
       });
 
-      // Step 1: Initial announcement message
-      const initialEmbed = {
-        title: 'Market Meltdown',
-        description: `📈 Market Meltdown!\n` + 
-                     `Prize pot: ${formatTokens(pot)}\n\n` + 
-                     `⛏️ REGISTRATION PHASE starting now!`,
-        color: 0x800080,
-        thumbnail: {
-          url: 'https://i.imgur.com/oqSl593.png'
-        }
-      };
+      const initialEmbed = new EmbedBuilder()
+        .setTitle('Market Meltdown')
+        .setDescription(`📈 Market Meltdown!\n` +
+                        `Prize pot: ${leveling.formatTokens(pot)}\n\n` +
+                        `⛏️ REGISTRATION PHASE starting now!`)
+        .setColor(0x800080)
+        .setThumbnail('https://i.imgur.com/oqSl593.png');
       try {
         await interaction.channel.send({ embeds: [initialEmbed] });
       } catch (error) {
@@ -411,20 +352,16 @@ async function execute(interaction) {
         return;
       }
 
-      // Step 2: Registration phase message with button
-      const registrationEmbed = {
-        title: 'Market Meltdown',
-        description: `⛏️ REGISTRATION PHASE!\n` +
-                     `💎 You have 30 seconds to join the game!\n\n` +
-                     `🏆 Prize Pool: ${formatTokens(pot)}\n` +
-                     `💰 Pot will be shared equally among all participants!\n` +
-                     `⏱ 30-second cooldown between registrations!\n` +
-                     `**Players**: 0`,
-        color: 0x800080,
-        thumbnail: {
-          url: 'https://i.imgur.com/oqSl593.png'
-        }
-      };
+      const registrationEmbed = new EmbedBuilder()
+        .setTitle('Market Meltdown')
+        .setDescription(`⛏️ REGISTRATION PHASE!\n` +
+                        `💎 You have 30 seconds to join the game!\n\n` +
+                        `🏆 Prize Pool: ${leveling.formatTokens(pot)}\n` +
+                        `💰 Pot will be shared equally among all participants!\n` +
+                        `⏱ 30-second cooldown between registrations!\n` +
+                        `**Players**: 0`)
+        .setColor(0x800080)
+        .setThumbnail('https://i.imgur.com/oqSl593.png');
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`meltdown_join_${gameId}`)
@@ -445,23 +382,19 @@ async function execute(interaction) {
       }
       await interaction.followUp({ content: 'Market Meltdown started!', ephemeral: true });
 
-      // Registration phase timer (30 seconds)
       const updateInterval = setInterval(() => updateRegistrationMessage(interaction, gameId), 3000);
       setTimeout(async () => {
         clearInterval(updateInterval);
         const game = activeGames.get(gameId);
         if (!game || game.players.size === 0) {
           if (game) {
-            const embed = {
-              title: 'Market Meltdown',
-              description: `⏰ REGISTRATION PHASE ENDED!\n` +
-                           `🎉 0 players joined!\n` +
-                           `💰 Game cancelled: No players.`,
-              color: 0xff0000,
-              thumbnail: {
-                url: 'https://i.imgur.com/oqSl593.png'
-              }
-            };
+            const embed = new EmbedBuilder()
+              .setTitle('Market Meltdown')
+              .setDescription(`⏰ REGISTRATION PHASE ENDED!\n` +
+                              `🎉 0 players joined!\n` +
+                              `💰 Game cancelled: No players.`)
+              .setColor(0xff0000)
+              .setThumbnail('https://i.imgur.com/oqSl593.png');
             try {
               await interaction.channel.messages.fetch(game.messageId).then(msg =>
                 msg.edit({ embeds: [embed], components: [] })
@@ -474,18 +407,14 @@ async function execute(interaction) {
           return;
         }
 
-        // Step 3: Registration ended message
         const share = Math.floor(game.pot / game.players.size);
-        const endRegistrationEmbed = {
-          title: 'Market Meltdown',
-          description: `⏰ REGISTRATION PHASE ENDED!\n` +
-                       `🎉 ${game.players.size} players joined!\n` +
-                       `💰 Each player receives ${formatTokens(share)} from the pot to invest!`,
-          color: 0x800080,
-          thumbnail: {
-            url: 'https://i.imgur.com/oqSl593.png'
-          }
-        };
+        const endRegistrationEmbed = new EmbedBuilder()
+          .setTitle('Market Meltdown')
+          .setDescription(`⏰ REGISTRATION PHASE ENDED!\n` +
+                          `🎉 ${game.players.size} players joined!\n` +
+                          `💰 Each player receives ${leveling.formatTokens(share)} from the pot to invest!`)
+          .setColor(0x800080)
+          .setThumbnail('https://i.imgur.com/oqSl593.png');
         try {
           await interaction.channel.messages.fetch(game.messageId).then(msg =>
             msg.edit({ embeds: [endRegistrationEmbed], components: [] })
@@ -494,7 +423,6 @@ async function execute(interaction) {
           console.error('Error sending registration end message:', error);
         }
 
-        // Distribute pot tokens to players
         for (const [userId] of game.players) {
           try {
             const user = interaction.client.users.cache.get(userId);
@@ -509,28 +437,23 @@ async function execute(interaction) {
           }
         }
 
-        // Step 4: Investment phase
         game.phase = 'investment';
         await updateInvestmentMessage(interaction, gameId);
 
-        // Investment phase timer (30 seconds)
         setTimeout(async () => {
           const game = activeGames.get(gameId);
           if (!game) return;
           const investedCount = Array.from(game.players.values()).filter(p => p.investment > 0).length;
-          
+
           if (investedCount === 0) {
-            const embed = {
-              title: 'Market Meltdown',
-              description: `📈 CRYPTO MARKET OPENED!\n` +
-                           `🏦 0 traders have invested in the market!\n` +
-                           `💰 Market pool: 0 $MINT\n\n` +
-                           `Game cancelled: No investments.`,
-              color: 0xff0000,
-              thumbnail: {
-                url: 'https://i.imgur.com/oqSl593.png'
-              }
-            };
+            const embed = new EmbedBuilder()
+              .setTitle('Market Meltdown')
+              .setDescription(`📈 CRYPTO MARKET OPENED!\n` +
+                              `🏦 0 traders have invested in the market!\n` +
+                              `💰 Market pool: 0 $MINT\n\n` +
+                              `Game cancelled: No investments.`)
+              .setColor(0xff0000)
+              .setThumbnail('https://i.imgur.com/oqSl593.png');
             try {
               await interaction.channel.messages.fetch(game.messageId).then(msg =>
                 msg.edit({ embeds: [embed], components: [] })
@@ -542,17 +465,13 @@ async function execute(interaction) {
             return;
           }
 
-          // Step 5: Investment ended message
-          const investmentEndEmbed = {
-            title: 'Market Meltdown',
-            description: `📈 CRYPTO MARKET OPENED!\n` +
-                         `🏦 ${investedCount} traders have invested in the market!\n` +
-                         `💰 Market pool: ${formatTokens(game.pool)}`,
-            color: 0x800080,
-            thumbnail: {
-              url: 'https://i.imgur.com/oqSl593.png'
-            }
-          };
+          const investmentEndEmbed = new EmbedBuilder()
+            .setTitle('Market Meltdown')
+            .setDescription(`📈 CRYPTO MARKET OPENED!\n` +
+                            `🏦 ${investedCount} traders have invested in the market!\n` +
+                            `💰 Market pool: ${leveling.formatTokens(game.pool)}`)
+            .setColor(0x800080)
+            .setThumbnail('https://i.imgur.com/oqSl593.png');
           try {
             await interaction.channel.messages.fetch(game.messageId).then(msg =>
               msg.edit({ embeds: [investmentEndEmbed], components: [] })
@@ -561,26 +480,23 @@ async function execute(interaction) {
             console.error('Error sending investment end message:', error);
           }
 
-          // Step 6: Start voting rounds
           game.phase = 'voting';
           game.round = 1;
-          
-          // Game loop
+
           while (activeGames.has(gameId)) {
             const currentGame = activeGames.get(gameId);
             if (!currentGame || currentGame.crashed || currentGame.players.size === 0) break;
 
             await updateVotingMessage(interaction, gameId);
-            await new Promise(resolve => setTimeout(resolve, 60000)); // 60s per round
+            await new Promise(resolve => setTimeout(resolve, 60000));
 
             const game = activeGames.get(gameId);
             if (!game) break;
 
-            // Process votes
             let pumpVotes = 0, dumpVotes = 0, withdrawVotes = 0;
             const dumpedPlayers = [];
             const withdrawnPlayers = [];
-            
+
             const activePlayerIds = Array.from(game.players.keys()).filter(id => {
               const player = game.players.get(id);
               return player.investment > 0 && !player.withdrawn;
@@ -588,10 +504,23 @@ async function execute(interaction) {
 
             for (const [userId, vote] of game.votes) {
               if (!activePlayerIds.includes(userId)) continue;
-              
+
               if (vote === 'pump') pumpVotes++;
-              else if (vote === 'dump') dumpVotes++;
-              else if (vote === 'withdraw' && game.round >= 2) {
+              else if (vote === 'dump') {
+                dumpVotes++;
+                const player = game.players.get(userId);
+                if (player && !player.withdrawn) {
+                  const dumpReward = Math.floor(game.pool * 0.1);
+                  const user = interaction.client.users.cache.get(userId);
+                  if (user) {
+                    dumpedPlayers.push({ user, reward: dumpReward });
+                    await leveling.addTokens(user, dumpReward);
+                    await leveling.addXP(interaction.client, user, 20, 'meltdown_dump_reward');
+                  }
+                  player.withdrawn = true;
+                  game.pool -= dumpReward;
+                }
+              } else if (vote === 'withdraw' && game.round >= 2) {
                 withdrawVotes++;
                 const player = game.players.get(userId);
                 if (player && !player.withdrawn) {
@@ -600,71 +529,35 @@ async function execute(interaction) {
                   const user = interaction.client.users.cache.get(userId);
                   if (user) {
                     withdrawnPlayers.push({ user, winnings });
-                    try {
-                      await leveling.addTokens(user, winnings);
-                      await leveling.addXP(user, Math.floor(winnings / 10));
-                    } catch (error) {
-                      console.error(`Error rewarding user ${userId}:`, error);
-                    }
+                    await leveling.addTokens(user, winnings);
+                    await leveling.addXP(interaction.client, user, 25, 'meltdown_withdraw');
                   }
                 }
               }
             }
 
-            // Show voting results
-            const voteResultsEmbed = {
-              title: `Market Meltdown Round ${game.round}`,
-              description: `**ROUND ${game.round}** Voting machine go "BRRRRR" and the results are in!\n\n` +
-                          `🚀 Pump: \`${pumpVotes}\` players\n` +
-                          `📉 Dump: \`${dumpVotes}\` players` +
-                          (game.round >= 2 ? `\n🏦 Withdraw: \`${withdrawVotes}\` players` : ''),
-              color: 0x800080,
-              thumbnail: {
-                url: 'https://i.imgur.com/oqSl593.png'
-              }
-            };
-            
+            const voteResultsEmbed = new EmbedBuilder()
+              .setTitle(`Market Meltdown Round ${game.round}`)
+              .setDescription(`**ROUND ${game.round}** Voting machine go "BRRRRR" and the results are in!\n\n` +
+                              `🚀 Pump: \`${pumpVotes}\` players\n` +
+                              `📉 Dump: \`${dumpVotes}\` players` +
+                              (game.round >= 2 ? `\n🏦 Withdraw: \`${withdrawVotes}\` players` : ''))
+              .setColor(0x800080)
+              .setThumbnail('https://i.imgur.com/oqSl593.png');
             try {
               await interaction.channel.send({ embeds: [voteResultsEmbed] });
             } catch (error) {
               console.error('Error sending vote results:', error);
             }
 
-            // Handle dump votes
-            for (const [userId, vote] of game.votes) {
-              if (vote === 'dump' && activePlayerIds.includes(userId)) {
-                const player = game.players.get(userId);
-                if (player && !player.withdrawn) {
-                  const dumpReward = Math.floor(game.pool * 0.1);
-                  const user = interaction.client.users.cache.get(userId);
-                  if (user) {
-                    dumpedPlayers.push({ user, reward: dumpReward });
-                    try {
-                      await leveling.addTokens(user, dumpReward);
-                      await leveling.addXP(user, Math.floor(dumpReward / 10));
-                    } catch (error) {
-                      console.error(`Error rewarding dump user ${userId}:`, error);
-                    }
-                  }
-                  player.withdrawn = true;
-                  game.pool -= dumpReward;
-                }
-              }
-            }
-
-            // Show dumped players message
             if (dumpedPlayers.length > 0) {
-              const dumpedPlayersEmbed = {
-                title: `Market Meltdown Round ${game.round}`,
-                description: `**ROUND ${game.round}**\n"It appears there are some jeets in the market"\n\n` +
-                            `The following players have each successfully dumped but are now out of the game:\n` +
-                            dumpedPlayers.map(p => `• ${p.user.username} - ${formatTokens(p.reward)}`).join('\n'),
-                color: 0xff4444,
-                thumbnail: {
-                  url: 'https://i.imgur.com/oqSl593.png'
-                }
-              };
-              
+              const dumpedPlayersEmbed = new EmbedBuilder()
+                .setTitle(`Market Meltdown Round ${game.round}`)
+                .setDescription(`**ROUND ${game.round}**\n"It appears there are some jeets in the market"\n\n` +
+                                `The following players have each successfully dumped but are now out of the game:\n` +
+                                dumpedPlayers.map(p => `• ${p.user.username} - ${leveling.formatTokens(p.reward)}`).join('\n'))
+                .setColor(0xff4444)
+                .setThumbnail('https://i.imgur.com/oqSl593.png');
               try {
                 await interaction.channel.send({ embeds: [dumpedPlayersEmbed] });
               } catch (error) {
@@ -672,14 +565,12 @@ async function execute(interaction) {
               }
             }
 
-            // Remove withdrawn players
             game.players.forEach((player, userId) => {
               if (player.withdrawn) game.players.delete(userId);
             });
 
             game.votes.clear();
 
-            // Market mechanics
             const majorityPump = pumpVotes > dumpVotes;
             if (majorityPump) {
               game.pool *= 2;
@@ -688,22 +579,18 @@ async function execute(interaction) {
               game.multiplier -= 0.2;
             }
 
-            // Crash conditions
             const activePlayers = Array.from(game.players.values()).filter(p => p.investment > 0 && !p.withdrawn);
             const crashChance = dumpVotes > activePlayers.length / 2 ? 0.8 : Math.min(0.3, 0.05 * game.round);
-            
+
             if (Math.random() < crashChance || game.round > 10 || activePlayers.length === 0) {
               game.crashed = true;
-              const embed = {
-                title: 'Market Meltdown',
-                description: `💥 **MARKET CRASHED!**\n\n` +
-                             `Game Over! Market crashed at ${game.multiplier.toFixed(2)}x multiplier!\n` +
-                             `Players who didn't withdraw lost their investment.`,
-                color: 0xff0000,
-                thumbnail: {
-                  url: 'https://i.imgur.com/oqSl593.png'
-                }
-              };
+              const embed = new EmbedBuilder()
+                .setTitle('Market Meltdown')
+                .setDescription(`💥 **MARKET CRASHED!**\n\n` +
+                                `Game Over! Market crashed at ${game.multiplier.toFixed(2)}x multiplier!\n` +
+                                `Players who didn't withdraw lost their investment.`)
+                .setColor(0xff0000)
+                .setThumbnail('https://i.imgur.com/oqSl593.png');
               try {
                 await interaction.channel.send({ embeds: [embed] });
               } catch (error) {
@@ -716,18 +603,14 @@ async function execute(interaction) {
             game.round++;
           }
 
-          // Game ended with all players withdrawn
           const finalGame = activeGames.get(gameId);
           if (finalGame && !finalGame.crashed) {
-            const embed = {
-              title: 'Market Meltdown',
-              description: `🎉 **GAME COMPLETED!**\n\n` +
-                           `All players successfully withdrew their investments!`,
-              color: 0x00ff00,
-              thumbnail: {
-                url: 'https://i.imgur.com/oqSl593.png'
-              }
-            };
+            const embed = new EmbedBuilder()
+              .setTitle('Market Meltdown')
+              .setDescription(`🎉 **GAME COMPLETED!**\n\n` +
+                              `All players successfully withdrew their investments!`)
+              .setColor(0x00ff00)
+              .setThumbnail('https://i.imgur.com/oqSl593.png');
             try {
               await interaction.channel.send({ embeds: [embed] });
             } catch (error) {
@@ -735,8 +618,8 @@ async function execute(interaction) {
             }
             activeGames.delete(gameId);
           }
-        }, 30000); // 30s investment phase
-      }, 30000); // 30s registration phase
+        }, 30000);
+      }, 30000);
     }
   } catch (error) {
     console.error('Error executing command:', error);
@@ -748,7 +631,6 @@ async function execute(interaction) {
   }
 }
 
-// Handle button interactions
 async function handleButton(interaction) {
   try {
     const [gameType, action, gameId] = interaction.customId.split('_');
@@ -758,6 +640,13 @@ async function handleButton(interaction) {
   } catch (error) {
     console.error('Error handling button interaction:', error);
     await interaction.reply({ content: 'An error occurred while processing the button!', ephemeral: true });
+    setTimeout(async () => {
+      try {
+        await interaction.deleteReply();
+      } catch (error) {
+        console.log('Could not delete ephemeral reply (likely already expired)');
+      }
+    }, 20000);
   }
 }
 
@@ -766,5 +655,5 @@ module.exports = {
   commands,
   execute,
   handleButton,
-  activeGames, // Exported for compatibility with original code
-}; 
+  activeGames
+};
